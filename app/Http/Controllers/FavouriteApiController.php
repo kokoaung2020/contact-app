@@ -22,17 +22,28 @@ class FavouriteApiController extends Controller
      */
     public function store(Request $request)
     {
+            if(Favourite::where("user_id",Auth::id())->where("contact_id",$request->contact_id)->first()){
 
+                Favourite::find($request->contact_id)->delete();
+                return response()->json([
+                    "message" => "Remove From Favourite",
+                    "success" => true
+                ]);
 
-            $favourite = new Favourite();
-            $favourite->user_id = Auth::id();
-            $favourite->contact_id = $request->contact_id;
-            $favourite->save();
+            }
+            else{
 
-            return response()->json([
-                "message" => "Added to Favourite",
-                "success" => true
-            ]);
+                $favourite = new Favourite();
+                $favourite->user_id = Auth::id();
+                $favourite->contact_id = $request->contact_id;
+                $favourite->save();
+
+                return response()->json([
+                    "message" => "Added to Favourite",
+                    "success" => true
+                ]);
+
+            }
 
 
     }

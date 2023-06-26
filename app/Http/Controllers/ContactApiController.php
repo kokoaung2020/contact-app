@@ -3,9 +3,13 @@
 namespace App\Http\Controllers;
 
 use App\Models\Contact;
+use App\Models\Gallery;
+use App\Models\RecordSearch;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Intervention\Image\Facades\Image;
 use App\Http\Resources\ContactResource;
+use Illuminate\Support\Facades\Storage;
 
 class ContactApiController extends Controller
 {
@@ -16,16 +20,32 @@ class ContactApiController extends Controller
     {
         $contact = Contact::when(request('keywork'),function($q){
             $keywork = request('keywork');
-            $q->orWhere("name","like","%$keywork%")
-              ->orWhere("phone","like","%$keywork%")
-              ->orWhere("email","like","%$keywork%")
-              ->orWhere("address","like","%$keywork%");
+
+            RecordSearch::create([
+                "record" => $keywork,
+                "user_id" => Auth::id()
+            ]);
+
+            $q->orWhere("name","like","%".$keywork."%")
+              ->orWhere("phone","like","%".$keywork."%")
+              ->orWhere("email","like","%".$keywork."%")
+              ->orWhere("address","like","%".$keywork."%");
+
         })->latest('id')
         ->when(request()->trash,fn($q)=>$q->onlyTrashed())
         ->paginate(5)
         ->withQueryString()->onEachSide(1);
 
-        return ContactResource::collection($contact);
+        if(RecordSearch::all() !== null){
+            $record = RecordSearch::all();
+            $count = $record->count();
+        }
+
+        return response()->json([
+            "contact" => ContactResource::collection($contact),
+            "record" => $record,
+            "count" => $count
+        ]);
     }
 
     /**
@@ -37,7 +57,9 @@ class ContactApiController extends Controller
             "name" => "required|max:50",
             "phone" => "required|numeric|min:5",
             "email" => "nullable|email|min:7",
-            "address" => "nullable|min:5"
+            "address" => "nullable|min:5",
+            "photos" => "nullable",
+            "photos.*" => "file|mimes:png,jpg,jpeg|max:1024"
         ]);
 
 
@@ -57,6 +79,30 @@ class ContactApiController extends Controller
             "address" => $request->address,
             "user_id" => Auth::id()
         ]);
+
+        $photos = [];
+        foreach($request->file('photos') as $key=>$photo){
+            $newName = uniqid()."_contact.".$photo->extension();
+
+            $img = Image::make($photo);
+
+            //large
+            $img->resize(1000,null,fn($constraint)=>$constraint->aspectRatio());
+            Storage::makeDirectory("public/large");
+            $img->save("storage/large/$newName");
+
+            //small
+            $img->resize(500,null,fn($constraint)=>$constraint->aspectRatio());
+            Storage::makeDirectory("public/small");
+            $img->save("storage/small/$newName");
+
+            $photos[$key] = new Gallery([
+                'name' => $newName,
+                'user_id' => Auth::id()
+            ]);
+        }
+
+        $contact->galleries()->saveMany($photos);
 
         return response()->json([
             "message" => "Product Created",
